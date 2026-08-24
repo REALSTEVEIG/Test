@@ -59,7 +59,7 @@ export function validateCreateInput(body: unknown): CreatePaymentInput {
     errors.push({ field: 'amount', message: 'amount must be finite' });
   } else if (amount <= 0) {
     errors.push({ field: 'amount', message: 'amount must be greater than 0' });
-  } else if (Math.round(amount * 100) !== amount * 100) {
+  } else if (!/^\d+(\.\d{1,2})?$/.test(amount.toString())) {
     errors.push({ field: 'amount', message: 'amount supports at most 2 decimal places' });
   }
 

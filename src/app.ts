@@ -13,7 +13,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 export function createApp(): Express {
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
   app.use(requestLogger);
 
   // Health check.

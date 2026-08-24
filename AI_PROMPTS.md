@@ -1,11 +1,5 @@
 # AI Prompts Used
 
-The following prompt was used to generate and refine this payment processing microservice.
-
----
-
-**Prompt:**
-
 > Build a production-ready Node.js and Express microservice using strict TypeScript to simulate payment processing. 
 > 
 > **Architecture & Setup:**

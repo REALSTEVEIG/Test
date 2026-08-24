@@ -12,6 +12,12 @@ describe('validateCreateInput', () => {
     expect(result).toMatchObject({ amount: 10.5, currency: 'USD', method: 'card' });
   });
 
+  it('accepts float values that could suffer from precision issues', () => {
+    // 1.14 * 100 in JS is 113.99999999999999
+    const result = validateCreateInput({ amount: 1.14, currency: 'USD', method: 'card' });
+    expect(result.amount).toBe(1.14);
+  });
+
   it('rejects missing amount', () => {
     expect(() => validateCreateInput({ currency: 'USD', method: 'card' })).toThrow(ValidationError);
   });

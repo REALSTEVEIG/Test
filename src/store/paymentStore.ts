@@ -19,6 +19,7 @@ const DATA_FILE = path.join(DATA_DIR, 'payments.json');
 
 let payments = new Map<string, Payment>();
 let loaded = false;
+let flushPromise: Promise<void> | null = null;
 
 async function ensureLoaded(): Promise<void> {
   if (!USE_FILE || loaded) return;
@@ -41,9 +42,22 @@ async function ensureLoaded(): Promise<void> {
 
 async function flush(): Promise<void> {
   if (!USE_FILE) return;
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const arr = Array.from(payments.values());
-  await fs.writeFile(DATA_FILE, JSON.stringify(arr, null, 2), 'utf8');
+  // Simple mutex to prevent concurrent file writes interleaving/corrupting
+  while (flushPromise) {
+    await flushPromise;
+  }
+  
+  flushPromise = (async () => {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const arr = Array.from(payments.values());
+    await fs.writeFile(DATA_FILE, JSON.stringify(arr, null, 2), 'utf8');
+  })();
+  
+  try {
+    await flushPromise;
+  } finally {
+    flushPromise = null;
+  }
 }
 
 export async function create(payment: Payment): Promise<Payment> {

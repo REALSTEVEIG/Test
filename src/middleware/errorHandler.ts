@@ -2,8 +2,10 @@ import type { NextFunction, Request, Response } from 'express';
 import logger from '../utils/logger';
 import { AppError } from '../errors/AppError';
 
-interface JsonParseError extends Error {
+interface BodyParserError extends Error {
   type?: string;
+  status?: number;
+  statusCode?: number;
 }
 
 /**
