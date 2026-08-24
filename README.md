@@ -229,13 +229,14 @@ All errors share a consistent shape:
 }
 ```
 
-| HTTP | `code`             | When                       |
-| ---- | ------------------ | -------------------------- |
-| 400  | `VALIDATION_ERROR` | Invalid request body       |
-| 400  | `INVALID_JSON`     | Malformed JSON body        |
-| 404  | `NOT_FOUND`        | Unknown payment or route   |
-| 409  | `CONFLICT`         | Illegal status transition  |
-| 500  | `INTERNAL_ERROR`   | Unexpected server error    |
+| HTTP | `code`              | When                                  |
+| ---- | ------------------- | ------------------------------------- |
+| 400  | `VALIDATION_ERROR`  | Invalid request body                  |
+| 400  | `INVALID_JSON`      | Malformed JSON body                   |
+| 404  | `NOT_FOUND`         | Unknown payment or route              |
+| 409  | `CONFLICT`          | Illegal status transition             |
+| 413  | `PAYLOAD_TOO_LARGE` | Request body exceeds the 100kb limit  |
+| 500  | `INTERNAL_ERROR`    | Unexpected server error               |
 
 ---
 

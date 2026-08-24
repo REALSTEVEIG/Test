@@ -52,6 +52,13 @@ describe('POST /payments', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('INVALID_JSON');
   });
+
+  it('returns 413 when the body exceeds the size limit', async () => {
+    const huge = { amount: 1, currency: 'USD', method: 'card', description: 'x'.repeat(200_000) };
+    const res = await request(app).post('/payments').send(huge);
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
 });
 
 describe('GET /payments/:id', () => {

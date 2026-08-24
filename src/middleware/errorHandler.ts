@@ -32,10 +32,25 @@ export function errorHandler(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _next: NextFunction,
 ): void {
-  // Malformed JSON body from express.json()
-  if (err && (err as JsonParseError).type === 'entity.parse.failed') {
-    res.status(400).json({
-      error: { code: 'INVALID_JSON', message: 'Request body is not valid JSON' },
+  // Errors raised by express.json() / body-parser carry a `type` and status.
+  const bodyErr = err as BodyParserError;
+  if (bodyErr && typeof bodyErr.type === 'string') {
+    if (bodyErr.type === 'entity.parse.failed') {
+      res.status(400).json({
+        error: { code: 'INVALID_JSON', message: 'Request body is not valid JSON' },
+      });
+      return;
+    }
+    if (bodyErr.type === 'entity.too.large') {
+      res.status(413).json({
+        error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the size limit' },
+      });
+      return;
+    }
+    // Any other body-parser error (e.g. unsupported charset/encoding) is a 4xx.
+    const status = bodyErr.status ?? bodyErr.statusCode ?? 400;
+    res.status(status).json({
+      error: { code: 'BAD_REQUEST', message: bodyErr.message || 'Invalid request body' },
     });
     return;
   }
