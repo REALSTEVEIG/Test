@@ -14,10 +14,18 @@ Highlights:
 
 - Clean, layered architecture (routes → controllers → service → store)
 - Strong typing across the payment domain (status enum, transition map, DTOs)
-- Robust **error handling** with a consistent JSON error shape
-- Structured **logging** (single-line JSON)
+- **Security hardening**: Helmet security headers, CORS, and per-IP rate limiting
+- **Fail-fast config**: all env vars validated at startup (`src/config.ts`)
+- **Concurrency-safe**: per-payment async mutex prevents lost updates between a
+  manual status change and the background processing task
+- **Atomic file persistence** (temp-file + rename) that survives crashes
+- Robust **error handling** with a consistent JSON error shape and correlation IDs
+- Structured **JSON logging** with per-request `X-Request-Id` correlation
 - Realistic **asynchronous** programming (Promises, timers, background tasks)
-- **Unit + integration tests** with Jest + ts-jest + Supertest
+- **Graceful shutdown** + `uncaughtException` / `unhandledRejection` handling
+- **Pagination** on the list endpoint
+- **58 unit + integration tests** (Jest + ts-jest + Supertest) with coverage gates
+- **ESLint + Prettier**, **Dockerfile** (multi-stage, non-root), and **CI** workflow
 - **API documentation** via Swagger UI (OpenAPI 3)
 
 ---
@@ -32,6 +40,8 @@ Highlights:
 - [Payment lifecycle & state machine](#payment-lifecycle--state-machine)
 - [Error format](#error-format)
 - [Testing](#testing)
+- [Docker](#docker)
+- [Production readiness](#production-readiness)
 - [Project structure](#project-structure)
 
 ---
@@ -76,15 +86,20 @@ Raw OpenAPI JSON: **http://localhost:3000/openapi.json**
 
 ## Scripts
 
-| Script                  | Description                                             |
-| ----------------------- | ------------------------------------------------------ |
-| `npm run dev`           | Run `src/server.ts` via ts-node with reload (nodemon)  |
-| `npm run build`         | Type-check + compile `src/` → `dist/`                  |
-| `npm start`             | Run the compiled server (`dist/server.js`)             |
+| Script                  | Description                                           |
+| ----------------------- | ----------------------------------------------------- |
+| `npm run dev`           | Run `src/server.ts` via ts-node with reload (nodemon) |
+| `npm run build`         | Type-check + compile `src/` → `dist/`                 |
+| `npm start`             | Run the compiled server (`dist/server.js`)            |
 | `npm run typecheck`     | `tsc --noEmit` over `src/` and `tests/`               |
-| `npm test`              | Run the Jest suite (via ts-jest)                       |
-| `npm run test:coverage` | Run tests with a coverage report                       |
-| `npm run clean`         | Remove `dist/`                                          |
+| `npm run lint`          | Lint with ESLint                                      |
+| `npm run lint:fix`      | Lint and auto-fix                                     |
+| `npm run format`        | Format with Prettier                                  |
+| `npm run format:check`  | Verify formatting (used in CI)                        |
+| `npm test`              | Run the Jest suite (via ts-jest)                      |
+| `npm run test:coverage` | Run tests with coverage (enforces thresholds)         |
+| `npm run check`         | typecheck + lint + test (one-shot gate)               |
+| `npm run clean`         | Remove `dist/`                                        |
 
 ---
 
@@ -92,14 +107,22 @@ Raw OpenAPI JSON: **http://localhost:3000/openapi.json**
 
 All configuration is via environment variables (see `.env.example`):
 
-| Variable               | Default  | Description                                                   |
-| ---------------------- | -------- | ------------------------------------------------------------ |
-| `PORT`                 | `3000`   | Port to listen on                                            |
-| `LOG_LEVEL`            | `info`   | `error` \| `warn` \| `info` \| `debug` (silent during tests) |
-| `PERSISTENCE`          | `memory` | `memory` (default) or `file` for JSON-file persistence       |
-| `DATA_DIR`             | `./data` | Directory for the JSON file when `PERSISTENCE=file`          |
-| `PROCESSING_DELAY_MS`  | `800`    | Simulated gateway processing time (ms)                       |
-| `PAYMENT_FAILURE_RATE` | `0.15`   | Probability `[0..1]` a payment fails during processing       |
+All configuration is validated at startup — an invalid value makes the service
+**exit immediately** with a clear message rather than starting in a bad state.
+
+| Variable               | Default       | Description                                             |
+| ---------------------- | ------------- | ------------------------------------------------------- |
+| `NODE_ENV`             | `development` | Environment name                                        |
+| `PORT`                 | `3000`        | Port to listen on (1–65535)                             |
+| `LOG_LEVEL`            | `info`        | `error` \| `warn` \| `info` \| `debug` \| `silent`      |
+| `PERSISTENCE`          | `memory`      | `memory` (default) or `file` for JSON-file persistence  |
+| `DATA_DIR`             | `data`        | Directory for the JSON file when `PERSISTENCE=file`     |
+| `PROCESSING_DELAY_MS`  | `800`         | Simulated gateway processing time (ms)                  |
+| `PAYMENT_FAILURE_RATE` | `0.15`        | Probability `[0..1]` a payment fails during processing  |
+| `BODY_LIMIT`           | `100kb`       | Max JSON request body size                              |
+| `CORS_ORIGIN`          | `*`           | Allowed CORS origin                                     |
+| `RATE_LIMIT_WINDOW_MS` | `60000`       | Rate-limit window (ms)                                  |
+| `RATE_LIMIT_MAX`       | `100`         | Max requests per window per IP (applies to `/payments`) |
 
 ---
 
@@ -229,14 +252,18 @@ All errors share a consistent shape:
 }
 ```
 
-| HTTP | `code`              | When                                  |
-| ---- | ------------------- | ------------------------------------- |
-| 400  | `VALIDATION_ERROR`  | Invalid request body                  |
-| 400  | `INVALID_JSON`      | Malformed JSON body                   |
-| 404  | `NOT_FOUND`         | Unknown payment or route              |
-| 409  | `CONFLICT`          | Illegal status transition             |
-| 413  | `PAYLOAD_TOO_LARGE` | Request body exceeds the 100kb limit  |
-| 500  | `INTERNAL_ERROR`    | Unexpected server error               |
+| HTTP | `code`              | When                                 |
+| ---- | ------------------- | ------------------------------------ |
+| 400  | `VALIDATION_ERROR`  | Invalid request body                 |
+| 400  | `INVALID_JSON`      | Malformed JSON body                  |
+| 404  | `NOT_FOUND`         | Unknown payment or route             |
+| 409  | `CONFLICT`          | Illegal status transition            |
+| 413  | `PAYLOAD_TOO_LARGE` | Request body exceeds the 100kb limit |
+| 429  | `RATE_LIMITED`      | Too many requests (per-IP limit)     |
+| 500  | `INTERNAL_ERROR`    | Unexpected server error              |
+
+Every error response also includes a `requestId` that matches the `X-Request-Id`
+response header, so a failing request can be traced directly to its log line.
 
 ---
 
@@ -257,7 +284,61 @@ Test suites (in `tests/`):
 - `model.test.ts` — input validation & the status state machine
 - `paymentService.test.ts` — service layer: async success flow, transitions, not-found
 - `paymentFailure.test.ts` — forced-failure gateway path (`FAILED` + `failureReason`)
-- `api.test.ts` — end-to-end HTTP tests for every endpoint, incl. 400/404/409 cases
+- `api.test.ts` — end-to-end HTTP tests for every endpoint, incl. 400/404/409/413 cases
+- `config.test.ts` — env validation / fail-fast behavior
+- `concurrency.test.ts` — status-update vs. background-processing race + mutex
+- `security.test.ts` — Helmet headers and rate limiting
+- `store.file.test.ts` — file persistence + atomic concurrent writes
+
+Coverage thresholds are enforced (`npm run test:coverage` fails the build below
+80% lines/statements/functions and 70% branches).
+
+---
+
+## Docker
+
+A multi-stage `Dockerfile` builds the TypeScript, prunes dev dependencies, and
+runs as the non-root `node` user with a built-in `/health` healthcheck.
+
+```bash
+# Build the image
+docker build -t payment-service .
+
+# Run it
+docker run --rm -p 3000:3000 --name payment-service payment-service
+
+# With custom config
+docker run --rm -p 3000:3000 \
+  -e PAYMENT_FAILURE_RATE=0 \
+  -e LOG_LEVEL=debug \
+  payment-service
+```
+
+The service is then available at http://localhost:3000 (docs at `/api-docs`).
+
+---
+
+## Production readiness
+
+This service is built to production standards for an assessment-scale project:
+
+- **Security** — Helmet headers, CORS, per-IP rate limiting, body-size limits,
+  `x-powered-by` disabled, non-root Docker user.
+- **Reliability** — fail-fast config validation, graceful shutdown on
+  `SIGINT`/`SIGTERM`, `uncaughtException`/`unhandledRejection` handling, atomic
+  file writes, and a per-payment mutex that prevents lost updates.
+- **Observability** — structured JSON logs with per-request correlation IDs
+  echoed via `X-Request-Id`; consistent, coded error envelopes.
+- **Quality gates** — strict TypeScript, ESLint, Prettier, 58 tests with
+  enforced coverage thresholds, and a GitHub Actions CI matrix (Node 18 & 20).
+
+Known scope boundaries (documented, not accidental):
+
+- Persistence is in-memory/JSON-file for simplicity. The `store` module is the
+  single seam to swap in a real database; the mutex is in-process, so a
+  multi-instance deployment would move to DB-level concurrency / a distributed
+  lock.
+- The payment "gateway" is simulated (randomized success/failure + delay).
 
 ---
 

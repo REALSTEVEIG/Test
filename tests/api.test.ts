@@ -145,15 +145,37 @@ describe('PATCH /payments/:id/status', () => {
 });
 
 describe('GET /payments', () => {
-  it('lists payments with a count', async () => {
+  it('lists payments with pagination metadata', async () => {
     await request(app).post('/payments').send({ amount: 1, currency: 'USD', method: 'card' });
     await request(app).post('/payments').send({ amount: 2, currency: 'USD', method: 'card' });
     await service.waitForProcessing();
 
     const res = await request(app).get('/payments');
     expect(res.status).toBe(200);
-    expect(res.body.count).toBe(2);
+    expect(res.body.pagination.total).toBe(2);
+    expect(res.body.pagination.count).toBe(2);
     expect(res.body.data.length).toBe(2);
+  });
+
+  it('supports ?limit and ?offset', async () => {
+    for (let i = 0; i < 3; i++) {
+      await request(app)
+        .post('/payments')
+        .send({ amount: i + 1, currency: 'USD', method: 'card' });
+    }
+    await service.waitForProcessing();
+
+    const res = await request(app).get('/payments?limit=1&offset=1');
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(1);
+    expect(res.body.pagination.total).toBe(3);
+    expect(res.body.pagination.limit).toBe(1);
+    expect(res.body.pagination.offset).toBe(1);
+  });
+
+  it('returns a correlation id header', async () => {
+    const res = await request(app).get('/payments');
+    expect(res.headers['x-request-id']).toBeDefined();
   });
 });
 

@@ -11,11 +11,22 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
 });
 
 /**
- * GET /payments — list all payments.
+ * GET /payments — list payments (paginated via ?limit & ?offset).
  */
-export const listPayments = asyncHandler(async (_req: Request, res: Response) => {
-  const payments = await paymentService.listPayments();
-  res.status(200).json({ data: payments, count: payments.length });
+export const listPayments = asyncHandler(async (req: Request, res: Response) => {
+  const limit = req.query['limit'] !== undefined ? Number(req.query['limit']) : undefined;
+  const offset = req.query['offset'] !== undefined ? Number(req.query['offset']) : undefined;
+
+  const result = await paymentService.listPayments({ limit, offset });
+  res.status(200).json({
+    data: result.items,
+    pagination: {
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+      count: result.items.length,
+    },
+  });
 });
 
 /**

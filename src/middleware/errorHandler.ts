@@ -1,11 +1,15 @@
 import type { NextFunction, Request, Response } from 'express';
-import logger from '../utils/logger';
+import logger, { type Logger } from '../utils/logger';
 import { AppError } from '../errors/AppError';
 
 interface BodyParserError extends Error {
   type?: string;
   status?: number;
   statusCode?: number;
+}
+
+function reqLogger(req: Request): Logger {
+  return req.log ?? logger;
 }
 
 /**
@@ -16,6 +20,7 @@ export function notFoundHandler(req: Request, res: Response): void {
     error: {
       code: 'NOT_FOUND',
       message: `Route ${req.method} ${req.originalUrl} not found`,
+      requestId: req.id,
     },
   });
 }
@@ -25,46 +30,46 @@ export function notFoundHandler(req: Request, res: Response): void {
  * Operational (expected) errors expose their message; unexpected errors are
  * logged with a stack trace and returned as a generic 500.
  */
-export function errorHandler(
-  err: unknown,
-  _req: Request,
-  res: Response,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _next: NextFunction,
-): void {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
+  const requestId = req.id;
+
   // Errors raised by express.json() / body-parser carry a `type` and status.
   const bodyErr = err as BodyParserError;
   if (bodyErr && typeof bodyErr.type === 'string') {
     if (bodyErr.type === 'entity.parse.failed') {
       res.status(400).json({
-        error: { code: 'INVALID_JSON', message: 'Request body is not valid JSON' },
+        error: { code: 'INVALID_JSON', message: 'Request body is not valid JSON', requestId },
       });
       return;
     }
     if (bodyErr.type === 'entity.too.large') {
       res.status(413).json({
-        error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the size limit' },
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Request body exceeds the size limit',
+          requestId,
+        },
       });
       return;
     }
-    // Any other body-parser error (e.g. unsupported charset/encoding) is a 4xx.
     const status = bodyErr.status ?? bodyErr.statusCode ?? 400;
     res.status(status).json({
-      error: { code: 'BAD_REQUEST', message: bodyErr.message || 'Invalid request body' },
+      error: { code: 'BAD_REQUEST', message: bodyErr.message || 'Invalid request body', requestId },
     });
     return;
   }
 
   if (err instanceof AppError) {
     if (err.statusCode >= 500) {
-      logger.error(err.message, { code: err.code, stack: err.stack });
+      reqLogger(req).error(err.message, { code: err.code, stack: err.stack });
     } else {
-      logger.warn(err.message, { code: err.code, details: err.details });
+      reqLogger(req).warn(err.message, { code: err.code, details: err.details });
     }
     res.status(err.statusCode).json({
       error: {
         code: err.code,
         message: err.message,
+        requestId,
         ...(err.details !== undefined ? { details: err.details } : {}),
       },
     });
@@ -73,8 +78,8 @@ export function errorHandler(
 
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;
-  logger.error('Unhandled error', { message, stack });
+  reqLogger(req).error('Unhandled error', { message, stack });
   res.status(500).json({
-    error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' },
+    error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred', requestId },
   });
 }

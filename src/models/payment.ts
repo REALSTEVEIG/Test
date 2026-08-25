@@ -18,6 +18,18 @@ export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS]
 
 export const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'NGN', 'CAD', 'AUD'] as const;
 
+export const SUPPORTED_METHODS = ['card', 'bank_transfer', 'wallet', 'crypto'] as const;
+
+export const MAX_DESCRIPTION_LENGTH = 500;
+export const MAX_AMOUNT = 1_000_000_000; // 1 billion — guards against absurd values
+
+/** Statuses from which no further transition is allowed. */
+export const TERMINAL_STATUSES: readonly PaymentStatus[] = ['REFUNDED', 'CANCELLED'];
+
+export function isTerminal(status: PaymentStatus): boolean {
+  return TERMINAL_STATUSES.includes(status);
+}
+
 /**
  * Which status transitions are allowed. Keeps the state machine explicit so an
  * update cannot, for example, move a COMPLETED payment back to PENDING.
@@ -59,6 +71,8 @@ export function validateCreateInput(body: unknown): CreatePaymentInput {
     errors.push({ field: 'amount', message: 'amount must be finite' });
   } else if (amount <= 0) {
     errors.push({ field: 'amount', message: 'amount must be greater than 0' });
+  } else if (amount > MAX_AMOUNT) {
+    errors.push({ field: 'amount', message: `amount must not exceed ${MAX_AMOUNT}` });
   } else if (!/^\d+(\.\d{1,2})?$/.test(amount.toString())) {
     errors.push({ field: 'amount', message: 'amount supports at most 2 decimal places' });
   }
@@ -84,12 +98,23 @@ export function validateCreateInput(body: unknown): CreatePaymentInput {
   } else if (typeof method !== 'string' || method.trim() === '') {
     errors.push({ field: 'method', message: 'method must be a non-empty string' });
   } else {
-    method = method.trim();
+    method = method.trim().toLowerCase();
+    if (!(SUPPORTED_METHODS as readonly string[]).includes(method as string)) {
+      errors.push({
+        field: 'method',
+        message: `method must be one of: ${SUPPORTED_METHODS.join(', ')}`,
+      });
+    }
   }
 
   const description = data['description'];
   if (description !== undefined && typeof description !== 'string') {
     errors.push({ field: 'description', message: 'description must be a string' });
+  } else if (typeof description === 'string' && description.length > MAX_DESCRIPTION_LENGTH) {
+    errors.push({
+      field: 'description',
+      message: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters`,
+    });
   }
 
   const metadata = data['metadata'];

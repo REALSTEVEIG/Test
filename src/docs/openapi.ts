@@ -1,4 +1,4 @@
-import { PAYMENT_STATUS, SUPPORTED_CURRENCIES } from '../models/payment';
+import { PAYMENT_STATUS, SUPPORTED_CURRENCIES, SUPPORTED_METHODS } from '../models/payment';
 
 /**
  * Static OpenAPI 3.0 document served via swagger-ui-express at /api-docs.
@@ -53,16 +53,38 @@ const openapiSpec = {
       get: {
         summary: 'List all payments',
         tags: ['Payments'],
+        parameters: [
+          {
+            in: 'query',
+            name: 'limit',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          {
+            in: 'query',
+            name: 'offset',
+            required: false,
+            schema: { type: 'integer', minimum: 0, default: 0 },
+          },
+        ],
         responses: {
           200: {
-            description: 'A list of payments',
+            description: 'A paginated list of payments',
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
                   properties: {
                     data: { type: 'array', items: { $ref: '#/components/schemas/Payment' } },
-                    count: { type: 'integer' },
+                    pagination: {
+                      type: 'object',
+                      properties: {
+                        total: { type: 'integer' },
+                        limit: { type: 'integer' },
+                        offset: { type: 'integer' },
+                        count: { type: 'integer' },
+                      },
+                    },
                   },
                 },
               },
@@ -123,8 +145,8 @@ const openapiSpec = {
         properties: {
           amount: { type: 'number', example: 49.99, description: 'Positive, max 2 decimals' },
           currency: { type: 'string', enum: [...SUPPORTED_CURRENCIES], example: 'USD' },
-          method: { type: 'string', example: 'card' },
-          description: { type: 'string', nullable: true },
+          method: { type: 'string', enum: [...SUPPORTED_METHODS], example: 'card' },
+          description: { type: 'string', nullable: true, maxLength: 500 },
           metadata: { type: 'object', additionalProperties: true },
         },
       },

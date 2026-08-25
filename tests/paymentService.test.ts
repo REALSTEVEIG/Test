@@ -56,18 +56,40 @@ describe('updatePaymentStatus', () => {
   });
 
   it('throws NotFoundError updating an unknown payment', async () => {
-    await expect(service.updatePaymentStatus('nope', { status: 'COMPLETED' })).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      service.updatePaymentStatus('nope', { status: 'COMPLETED' }),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
 describe('listPayments', () => {
-  it('returns all created payments', async () => {
+  it('returns all created payments with pagination metadata', async () => {
     await service.createPayment({ amount: 1, currency: 'USD', method: 'card' });
     await service.createPayment({ amount: 2, currency: 'USD', method: 'card' });
     await service.waitForProcessing();
-    const all = await service.listPayments();
-    expect(all.length).toBe(2);
+    const page = await service.listPayments();
+    expect(page.items.length).toBe(2);
+    expect(page.total).toBe(2);
+    expect(page.limit).toBe(20);
+    expect(page.offset).toBe(0);
+  });
+
+  it('respects limit and offset', async () => {
+    for (let i = 0; i < 5; i++) {
+      await service.createPayment({ amount: i + 1, currency: 'USD', method: 'card' });
+    }
+    await service.waitForProcessing();
+    const page = await service.listPayments({ limit: 2, offset: 2 });
+    expect(page.items.length).toBe(2);
+    expect(page.total).toBe(5);
+    expect(page.limit).toBe(2);
+    expect(page.offset).toBe(2);
+  });
+
+  it('clamps an out-of-range limit', async () => {
+    await service.createPayment({ amount: 1, currency: 'USD', method: 'card' });
+    await service.waitForProcessing();
+    const page = await service.listPayments({ limit: 9999 });
+    expect(page.limit).toBe(100);
   });
 });
