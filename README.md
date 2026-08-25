@@ -316,6 +316,39 @@ docker run --rm -p 3000:3000 \
 
 The service is then available at http://localhost:3000 (docs at `/api-docs`).
 
+### Docker Compose
+
+The easiest way to start it up and test. Every setting is overridable via env
+vars, and JSON data persists across restarts (in a named volume) when
+`PERSISTENCE=file`.
+
+```bash
+# Start (builds on first run)
+docker compose up -d --build
+
+# Start on a custom port with tuned simulation
+PORT=3700 PAYMENT_FAILURE_RATE=0 PROCESSING_DELAY_MS=400 docker compose up -d
+
+# Enable file-based persistence (survives restarts via the payment-data volume)
+PERSISTENCE=file docker compose up -d
+
+# Follow logs / check status
+docker compose logs -f
+docker compose ps
+
+# Stop (add -v to also remove the data volume)
+docker compose down
+```
+
+Then hit it (default port shown):
+
+```bash
+curl http://localhost:3000/health
+curl -X POST http://localhost:3000/payments \
+  -H 'Content-Type: application/json' \
+  -d '{"amount":49.99,"currency":"USD","method":"card"}'
+```
+
 ---
 
 ## Production readiness

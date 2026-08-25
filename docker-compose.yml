@@ -1,0 +1,39 @@
+services:
+  payment-service:
+    build: .
+    image: payment-service:latest
+    container_name: payment-service
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # memory (default) or file. When "file", data persists to the mounted volume.
+      PERSISTENCE: ${PERSISTENCE:-memory}
+      DATA_DIR: /app/data
+      PROCESSING_DELAY_MS: ${PROCESSING_DELAY_MS:-800}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.15}
+      BODY_LIMIT: ${BODY_LIMIT:-100kb}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+    volumes:
+      # Persist JSON data across restarts when PERSISTENCE=file.
+      - payment-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  payment-data:

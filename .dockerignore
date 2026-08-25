@@ -8,3 +8,6 @@ data
 .env
 .DS_Store
 tests
+docker-compose.yml
+README.md
+AI_PROMPTS.md
